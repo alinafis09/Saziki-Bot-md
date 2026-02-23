@@ -1067,8 +1067,7 @@ export async function participantsUpdate({ id, participants, action }) {
           try {
           let pp = await m?.conn?.profilePictureUrl(user, 'image').catch(_ => 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png?q=60');
            const apii = await mconn?.conn?.getFile(pp);
-           const antiArab = JSON.parse(fs.readFileSync('./src/antiArab.json'));
-           const userPrefix = antiArab.some((prefix) => user.startsWith(prefix));
+           const userPrefix = false;
            const botTt2 = groupMetadata?.participants?.find((u) => m?.conn?.decodeJid(u.id) == m?.conn?.user?.jid) || {};
            const isBotAdminNn = botTt2?.admin === 'admin' || false;
            text = (action === 'add' ? (chat.sWelcome || '¡Bienvenido @user al grupo @subject!') : (chat.sBye || '¡Adiós @user!')).replace('@subject', await m?.conn?.getName(id)).replace('@desc', groupMetadata?.desc?.toString() || '*Sin descripción*').replace('@user', '@' + user.split('@')[0]);
