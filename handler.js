@@ -8,6 +8,19 @@ import fs from 'fs';
 import chalk from 'chalk';
 import mddd5 from 'md5';
 import ws from 'ws';
+
+// Importar settings
+import settings, { 
+  owner as ownerConfig, 
+  bot as botConfig,
+  getErrorMessage,
+  getSuccessMessage,
+  getMainOwner,
+  getCurrentDate,
+  getCurrentTime,
+  formatUptime
+} from './lib/settings.js';
+
 let mconn;
 
 /**
@@ -19,6 +32,9 @@ const delay = (ms) => isNumber(ms) && new Promise((resolve) => setTimeout(functi
   clearTimeout(this);
   resolve();
 }, ms));
+
+// Actualizar global.owner con los números de settings
+global.owner = ownerConfig.numbers.map(num => [num, ownerConfig.names[ownerConfig.numbers.indexOf(num)], true]);
 
 /**
  * Handle messages upsert
@@ -670,10 +686,9 @@ export async function handler(chatUpdate) {
     }
 
     const senderNumber = m.sender.split('@')[0].replace(/[^0-9]/g, '');
-    const isROwner = global.owner && Array.isArray(global.owner) && global.owner.some(owner => {
-      const ownerNumber = Array.isArray(owner) ? owner[0] : owner;
-      return ownerNumber && ownerNumber.replace(/[^0-9]/g, '') === senderNumber;
-    });
+    
+    // Usar la función isOwner de settings
+    const isROwner = ownerConfig.isOwner(senderNumber);
     const isOwner = isROwner || m.fromMe;
     const isMods = isOwner || global.mods.map((v) => v.replace(/[^0-9]/g, '') + '@s.whatsapp.net').includes(m.sender);
     const isPrems = isROwner || isOwner || isMods || global.db.data.users[m.sender].premiumTime > 0;
@@ -811,9 +826,8 @@ export async function handler(chatUpdate) {
 
             if (user.bannedMessageCount < 3) {
               const messageNumber = user.bannedMessageCount + 1;
-              const messageText = `*[ ℹ️ ] Has sido baneado.*
-*Motivo:* ${user.bannedReason ? user.bannedReason : 'No especificado'}
-*Mensaje ${messageNumber}/3*`;
+              // Usar mensaje de settings
+              const messageText = getErrorMessage('banned', { reason: user.bannedReason || 'No especificado' }) + `\n*Mensaje ${messageNumber}/3*`;
               m.reply(messageText);
               user.bannedMessageCount++;
             } else if (user.bannedMessageCount === 3) {
@@ -824,11 +838,11 @@ export async function handler(chatUpdate) {
             return;
           }
 
-          if (botSpam.antispam && m.text && user && user.lastCommandTime && (Date.now() - user.lastCommandTime) < 5000 && !isROwner) {
+          if (botSpam.antispam && m.text && user && user.lastCommandTime && (Date.now() - user.lastCommandTime) < (botConfig.defaultLimits.commandCooldown * 1000) && !isROwner) {
             if (user.commandCount === 2) {
-              const remainingTime = Math.ceil((user.lastCommandTime + 5000 - Date.now()) / 1000);
+              const remainingTime = Math.ceil((user.lastCommandTime + (botConfig.defaultLimits.commandCooldown * 1000) - Date.now()) / 1000);
               if (remainingTime > 0) {
-                const messageText = `*[ ℹ️ ] Espera* _${remainingTime} segundos_ *antes de utilizar otro comando.*`;
+                const messageText = getErrorMessage('cooldown', { time: remainingTime });
                 m.reply(messageText);
                 return;
               } else {
@@ -886,7 +900,7 @@ export async function handler(chatUpdate) {
         if (!allowedCommandsWithoutReg.includes(command) && !isROwner && !isOwner) {
           const user = global.db.data.users[m.sender];
           if (!user || !user.registered) {
-            await m.reply('> ✅️*You must log in first to be able to use Sazeki Bot* \n\n.reg name.age');
+            await m.reply(getErrorMessage('notRegistered'));
             continue;
           }
         }
@@ -903,11 +917,11 @@ export async function handler(chatUpdate) {
           m.exp += xp;
         }
         if (!isPrems && plugin.limit && global.db.data.users[m.sender].limit < plugin.limit * 1) {
-          mconn.conn.reply(m.chat, `*[ ℹ️ ] No tienes suficientes límites. Compra más con* _${usedPrefix}buyall_`, m);
+          mconn.conn.reply(m.chat, getErrorMessage('insufficientLimit'), m);
           continue;
         }
         if (plugin.level > _user.level) {
-          mconn.conn.reply(m.chat, `*[ ℹ️ ] Necesitas nivel ${plugin.level} para usar este comando. Tu nivel: ${_user.level}. Usa* ${usedPrefix}lvl *para ver tu nivel.*`, m);
+          mconn.conn.reply(m.chat, getErrorMessage('insufficientLevel', { level: plugin.level }), m);
           continue;
         }
         const chatPrim = global.db.data.chats[m.chat] || {};
@@ -951,6 +965,17 @@ export async function handler(chatUpdate) {
           chatUpdate,
           __dirname: ___dirname,
           __filename,
+          // Pasar settings al plugin
+          settings: {
+            owner: ownerConfig,
+            bot: botConfig,
+            getErrorMessage,
+            getSuccessMessage,
+            getMainOwner,
+            getCurrentDate,
+            getCurrentTime,
+            formatUptime
+          }
         };
         try {
           await plugin.call(this, m, extra);
@@ -979,7 +1004,7 @@ export async function handler(chatUpdate) {
             }
           }
           if (m.limit) {
-            m.reply(`*[ ℹ️ ] Usaste ${m.limit} límite${m.limit > 1 ? 's' : ''}. Límite restante: ${global.db.data.users[m.sender].limit}*`);
+            m.reply(`*${botConfig.emojis.info} Usaste ${m.limit} límite${m.limit > 1 ? 's' : ''}. Límite restante: ${global.db.data.users[m.sender].limit}*`);
           }
         }
         break;
@@ -1067,10 +1092,11 @@ export async function participantsUpdate({ id, participants, action }) {
           try {
           let pp = await m?.conn?.profilePictureUrl(user, 'image').catch(_ => 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png?q=60');
            const apii = await mconn?.conn?.getFile(pp);
-           const userPrefix = false;
+           const antiArab = JSON.parse(fs.readFileSync('./src/antiArab.json'));
+           const userPrefix = antiArab.some((prefix) => user.startsWith(prefix));
            const botTt2 = groupMetadata?.participants?.find((u) => m?.conn?.decodeJid(u.id) == m?.conn?.user?.jid) || {};
            const isBotAdminNn = botTt2?.admin === 'admin' || false;
-           text = (action === 'add' ? (chat.sWelcome || '¡Bienvenido @user al grupo @subject!') : (chat.sBye || '¡Adiós @user!')).replace('@subject', await m?.conn?.getName(id)).replace('@desc', groupMetadata?.desc?.toString() || '*Sin descripción*').replace('@user', '@' + user.split('@')[0]);
+           text = (action === 'add' ? (chat.sWelcome || botConfig.defaultWelcome) : (chat.sBye || botConfig.defaultBye)).replace('@subject', await m?.conn?.getName(id)).replace('@desc', groupMetadata?.desc?.toString() || '*Sin descripción*').replace('@user', '@' + user.split('@')[0]);
             if (userPrefix && chat.antiArab && botTt.restrict && isBotAdminNn && action === 'add') {
            const responseb = await m.conn.groupParticipantsUpdate(id, [user], 'remove');
             if (responseb[0].status === '404') return;
@@ -1137,7 +1163,7 @@ export async function callUpdate(callUpdate) {
       if (nk.status == 'offer') {
         const callmsg = await mconn?.conn?.reply(nk.from, `Hola *@${nk.from.split('@')[0]}*, las ${nk.isVideo ? 'videollamadas' : 'llamadas'} no están permitidas, serás bloqueado.\n-\nSi accidentalmente llamaste póngase en contacto con mi creador para que te desbloquee!`, false, { mentions: [nk.from] });
         const vcard = `Saziki`;
-        await mconn.conn.sendMessage(nk.from, { contacts: { displayName: 'ALI NAFIS', contacts: [{ vcard }] } }, { quoted: callmsg });
+        await mconn.conn.sendMessage(nk.from, { contacts: { displayName: getMainOwner().creatorName, contacts: [{ vcard }] } }, { quoted: callmsg });
         await mconn.conn.updateBlockStatus(nk.from, 'block');
       }
     }
@@ -1147,8 +1173,8 @@ export async function callUpdate(callUpdate) {
 export async function deleteUpdate(message) {
   const datas = global
   let d = new Date(new Date + 3600000)
-  let date = d.toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })
-  let time = d.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })
+  let date = getCurrentDate()
+  let time = getCurrentTime()
   try {
     const { fromMe, id, participant } = message
     if (fromMe) return
@@ -1157,12 +1183,7 @@ export async function deleteUpdate(message) {
     if (!chat?.antidelete) return
     if (!msg) return
     if (!msg?.isGroup) return
-    const antideleteMessage = `*[ ℹ️ ] Mensaje eliminado detectado*
-*De:* @${participant.split`@`[0]}
-*Hora:* ${time}
-*Fecha:* ${date}
-
-*Mensaje original:*`.trim();
+    const antideleteMessage = `${botConfig.emojis.info} *Mensaje eliminado detectado*\n*De:* @${participant.split`@`[0]}\n*Hora:* ${time}\n*Fecha:* ${date}\n\n*Mensaje original:*`.trim();
     await mconn.conn.sendMessage(msg.chat, { text: antideleteMessage, mentions: [participant] }, { quoted: msg })
     mconn.conn.copyNForward(msg.chat, msg).catch(e => console.log(e, msg))
   } catch (e) {
@@ -1171,18 +1192,8 @@ export async function deleteUpdate(message) {
 }
 
 global.dfail = (type, m, conn) => {
-  const msg = {
-    rowner: '*[ ⚠️ ] Este comando solo puede ser usado por el propietario real del bot.*',
-    owner: '*[ ⚠️ ] Este comando solo puede ser usado por el propietario del bot.*',
-    mods: '*[ ⚠️ ] Este comando solo puede ser usado por moderadores.*',
-    premium: '*[ ⚠️ ] Este comando solo puede ser usado por usuarios premium.*',
-    group: '*[ ⚠️ ] Este comando solo puede ser usado en grupos.*',
-    private: '*[ ⚠️ ] Este comando solo puede ser usado en chats privados.*',
-    admin: '*[ ⚠️ ] Este comando solo puede ser usado por administradores del grupo.*',
-    botAdmin: '*[ ⚠️ ] Necesito ser administrador para ejecutar este comando.*',
-    unreg: '*[ ⚠️ ] Debes registrarte para usar este comando. Usa #register nombre.edad*',
-    restrict: '*[ ⚠️ ] Esta función está deshabilitada.*',
-  }[type];
+  // Usar mensajes de settings
+  const msg = getErrorMessage(type);
   const aa = { quoted: m, userJid: conn.user.jid };
   const prep = generateWAMessageFromContent(m.chat, { extendedTextMessage: { text: msg, contextInfo: { externalAdReply: { title: 'ⓘ Información', body: 'Acción no permitida', thumbnail: imagen1, sourceUrl: 'https://github.com' } } } }, aa);
 
