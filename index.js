@@ -8,10 +8,6 @@ import yargs from 'yargs';
 import chalk from 'chalk'; 
 import fs from 'fs'; 
 import './config.js';
-//TelegramBot 
-import "./lib/telegram.js";
-import keys from "./lib/keys.json" assert { type: "json" };
-//***********
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(__dirname);
 const { say } = cfonts;
