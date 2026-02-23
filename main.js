@@ -1093,7 +1093,7 @@ setInterval(async () => {
   if (stopped === 'close' || !conn || !conn?.user) return;
   const _uptime = process.uptime() * 1000;
   const uptime = clockString(_uptime);
-  const bio = `• Activo: ${uptime} | TheMystic-Bot-MD`;
+  const bio = `• Activo: ${uptime} | Saziki-Bot`;
   await conn?.updateProfileStatus(bio).catch((_) => _);
 }, 60000);
 
