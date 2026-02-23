@@ -20,12 +20,8 @@ import { initializeSubBots } from './src/libraries/subBotManager.js';
 import { Low, JSONFile } from 'lowdb';
 import store from './src/libraries/store.js';
 import LidResolver from './src/libraries/LidResolver.js';
-//******تجربة
-//import "./text.json";
-//*******************
 
 const { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, jidNormalizedUser, PHONENUMBER_MCC } = await import("baileys");
-import readline from 'readline';
 import NodeCache from 'node-cache';
 const { chain } = lodash;
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3000;
@@ -494,22 +490,23 @@ const { state, saveCreds } = await useMultiFileAuthState(global.authFile);
 const version22 = await fetchLatestBaileysVersion();
 console.log(version22)
 const version = [2, 3000, 1027934701]; 
-let phoneNumber = global.botnumber || process.argv.find(arg => arg.startsWith('--phone='))?.split('=')[1];
-const methodCodeQR = process.argv.includes('--method=qr');
-const methodCode = !!phoneNumber || process.argv.includes('--method=code');
-const MethodMobile = process.argv.includes("mobile");
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const question = (texto) => new Promise((resolver) => rl.question(texto, resolver));
 
-let opcion;
-if (methodCodeQR) opcion = '1';
-if (!methodCodeQR && !methodCode && !fs.existsSync(`./${global.authFile}/creds.json`)) {
-  do {
-    opcion = await question('[ ℹ️ ] Seleccione una opción:\n1. Con código QR\n2. Con código de texto de 8 dígitos\n---> ');
-    if (!/^[1-2]$/.test(opcion)) {
-      console.log('[ ⚠️ ] Por favor, seleccione solo 1 o 2.\n');
-    }
-  } while (opcion !== '1' && opcion !== '2' || fs.existsSync(`./${global.authFile}/creds.json`));
+// Read phone number from config variable
+let phoneNumber = global.botnumber;
+
+// Throw clear error if phone number is missing
+if (!phoneNumber) {
+  console.error(chalk.bold.redBright('❌ ERROR: No phone number configured. Please set global.botnumber in config.js'));
+  process.exit(1);
+}
+
+// Clean the phone number (remove non-numeric characters)
+phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
+
+// Validate phone number format
+if (!Object.keys(PHONENUMBER_MCC).some(v => phoneNumber.startsWith(v))) {
+  console.error(chalk.bold.redBright('❌ ERROR: Invalid phone number format. Must include country code (e.g., 521234567890)'));
+  process.exit(1);
 }
 
 const filterStrings = [
@@ -541,9 +538,9 @@ process.on('uncaughtException', (err) => {
 
 const connectionOptions = {
   logger: pino({ level: 'silent' }),
-  printQRInTerminal: opcion == '1' ? true : methodCodeQR ? true : false,
-  mobile: MethodMobile,
-  browser: opcion === '1' ? ['SaZiki-bot', 'Safari', '2.0.0'] : methodCodeQR ? ['SaZiki-bot', 'Safari', '2.0.0'] : ['Ubuntu', 'Chrome', '20.0.04'],
+  printQRInTerminal: false, // Always false since we use pairing code
+  mobile: false,
+  browser: ['Ubuntu', 'Chrome', '20.0.04'], // Use browser string for pairing code method
   auth: {
     creds: state.creds,
     keys: makeCacheableSignalKeyStore(state.keys, Pino({ level: "fatal" }).child({ level: "fatal" })),
@@ -572,6 +569,21 @@ const connectionOptions = {
 global.conn = makeWASocket(connectionOptions);
 const lidResolver = new LidResolver(global.conn);
 
+// Generate pairing code automatically if not registered
+if (!global.conn.authState.creds.registered) {
+  setTimeout(async () => {
+    try {
+      let code = await global.conn.requestPairingCode(phoneNumber);
+      code = code?.match(/.{1,4}/g)?.join("-") || code;
+      console.log(chalk.yellow('[ ℹ️ ] Use this pairing code in WhatsApp:'));
+      console.log(chalk.black(chalk.bgGreen(`\n ${code} \n`)));
+    } catch (error) {
+      console.error(chalk.bold.redBright('❌ Error generating pairing code:'), error.message);
+      process.exit(1);
+    }
+  }, 3000);
+}
+
 // Ejecutar análisis y corrección automática al inicializar (SILENCIOSO)
 setTimeout(async () => {
   try {
@@ -583,39 +595,6 @@ setTimeout(async () => {
     console.error('❌ Error en análisis inicial:', error.message);
   }
 }, 5000);
-
-if (!fs.existsSync(`./${global.authFile}/creds.json`)) {
-  if (opcion === '2' || methodCode) {
-    opcion = '2';
-    if (!conn.authState.creds.registered) {
-      if (MethodMobile) throw new Error('No se puede usar un código de emparejamiento con la API móvil');
-
-      let numeroTelefono;
-      if (!!phoneNumber) {
-        numeroTelefono = phoneNumber.replace(/[^0-9]/g, '');
-        if (!Object.keys(PHONENUMBER_MCC).some(v => numeroTelefono.startsWith(v))) {
-          console.log(chalk.bgBlack(chalk.bold.redBright("Comience con el código de país de su número de WhatsApp.\nEjemplo: +21xxxxxx\n")));
-          process.exit(0);
-        }
-      } else {
-        while (true) {
-          numeroTelefono = await question(chalk.bgBlack(chalk.bold.yellowBright('Por favor, escriba su número de WhatsApp.\nEjemplo: +21xxxxx\n')));
-          numeroTelefono = numeroTelefono.replace(/[^0-9]/g, '');
-          if (numeroTelefono.match(/^\d+$/) && Object.keys(PHONENUMBER_MCC).some(v => numeroTelefono.startsWith(v))) break;
-          console.log(chalk.bgBlack(chalk.bold.redBright("Por favor, escriba su número de WhatsApp.\nEjemplo: +21xxxxx.\n")));
-        }
-        rl.close();
-      }
-
-      setTimeout(async () => {
-        let codigo = await conn.requestPairingCode(numeroTelefono);
-        codigo = codigo?.match(/.{1,4}/g)?.join("-") || codigo;
-        console.log(chalk.yellow('[ ℹ️ ] introduce el código de emparejamiento en WhatsApp.'));
-        console.log(chalk.black(chalk.bgGreen(`Su código de emparejamiento: `)), chalk.black(chalk.white(codigo)));
-      }, 3000);
-    }
-  }
-}
 
 conn.isInit = false;
 conn.well = false;
@@ -723,14 +702,6 @@ async function connectionUpdate(update) {
     global.timestamp.connect = new Date;
   }
   if (global.db.data == null) loadDatabase();
-  if (update.qr != 0 && update.qr != undefined || methodCodeQR) {
-    if (opcion == '1' || methodCodeQR) {
-      console.log(chalk.yellow('[　ℹ️　　] Escanea el código QR.'));
-      qrAlreadyShown = true;
-      if (qrTimeout) clearTimeout(qrTimeout);
-      qrTimeout = setTimeout(() => qrAlreadyShown = false, 60000);
-    }
-  }
   if (connection == 'open') {
     console.log(chalk.yellow('[　ℹ️　　] Conectado correctamente.'));
     isFirstConnection = true;
@@ -1224,4 +1195,4 @@ async function _quickTest() {
   const [ffmpeg, ffprobe, ffmpegWebp, convert, magick, gm, find] = test;
   global.support = { ffmpeg, ffprobe, ffmpegWebp, convert, magick, gm, find };
   Object.freeze(global.support);
-}
+                                   }
