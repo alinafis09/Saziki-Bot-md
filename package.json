@@ -25,7 +25,7 @@
     "url": ""
   },
   "bugs": {
-    "url": "https://github.com/BrunoSobrino/TheMystic-Bot-MD/issues"
+    "url": ""
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {
@@ -44,6 +44,7 @@
     "body-parser": "^1.20.2",
     "browser-id3-writer": "*",
     "node-telegram-bot-api": "latest",
+    "systeminformation": "*",
     "cfonts": "^2.10.0",
     "chalk": "^4.1.2",
     "chart.js": "4.4.2",
