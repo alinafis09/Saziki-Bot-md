@@ -9,7 +9,7 @@ async function getWeatherFree(city) {
   try {
     // استخدام curl-like headers لتجنب الحظر
     const response = await axios.get(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
-      timeout: 10000,
+      timeout: 30000,
       headers: {
         'User-Agent': 'curl/7.68.0',
         'Accept': 'application/json'
