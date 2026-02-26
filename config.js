@@ -4,7 +4,7 @@ import {fileURLToPath} from 'url';
 import fs from 'fs'; 
 import moment from 'moment-timezone';
 
-global.botnumber = "212624052666"
+global.botnumber = "212710251670"
 global.confirmCode = ""
 global.authFile = `SazikiSession`;
 
